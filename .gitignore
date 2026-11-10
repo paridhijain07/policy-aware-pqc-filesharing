@@ -1,0 +1,27 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Pytest / Cache
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local Storage and Temporary Test Files
+storage/client_uploads/*
+!storage/client_uploads/.gitkeep
+storage/server_storage/*
+!storage/server_storage/.gitkeep
+storage/client_test/
+storage/server_test/
+*.part
+
+# Environment and IDE
+.env
+.venv/
+env/
+venv/
+.idea/
+.vscode/
+*.swp

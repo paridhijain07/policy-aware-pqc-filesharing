@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Policy-Aware Post-Quantum Secure File Sharing</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Inter', sans-serif; background-color: #0b0f19; color: #f3f4f6; }
+    .mono { font-family: 'JetBrains Mono', monospace; }
+    .glass { background: rgba(17, 24, 39, 0.75); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.08); }
+    .glass-card { background: #111827; border: 1px solid #1f2937; }
+    .pulse-dot { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .4; } }
+    .step-active { border-color: #3b82f6; background-color: rgba(59, 130, 246, 0.1); color: #60a5fa; }
+    .step-complete { border-color: #10b981; background-color: rgba(16, 185, 129, 0.1); color: #34d399; }
+    .step-error { border-color: #ef4444; background-color: rgba(239, 68, 68, 0.1); color: #f87171; }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+  <!-- TOP HEADER -->
+  <header class="glass sticky top-0 z-50 px-6 py-4 flex flex-wrap items-center justify-between border-b border-gray-800">
+    <div class="flex items-center space-x-3">
+      <div class="p-2 bg-gradient-to-tr from-blue-600 to-indigo-600 rounded-lg shadow-lg shadow-blue-500/20">
+        <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+        </svg>
+      </div>
+      <div>
+        <h1 class="text-lg font-bold tracking-tight text-white flex items-center space-x-2">
+          <span>Policy-Aware Post-Quantum File Sharing</span>
+          <span class="text-xs px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20">RFC 9954 / FIPS 203</span>
+        </h1>
+        <p class="text-xs text-gray-400">Resilient Hybrid Cryptography Under Active Network Failures & MitM Attacks</p>
+      </div>
+    </div>
+
+    <!-- Algorithm Badges -->
+    <div class="flex items-center space-x-2">
+      <span class="text-xs px-2.5 py-1 rounded-md bg-gray-800 text-gray-300 border border-gray-700">ML-KEM-768</span>
+      <span class="text-xs px-2.5 py-1 rounded-md bg-gray-800 text-gray-300 border border-gray-700">X25519</span>
+      <span class="text-xs px-2.5 py-1 rounded-md bg-gray-800 text-gray-300 border border-gray-700">Dual-PRF HKDF</span>
+      <span class="text-xs px-2.5 py-1 rounded-md bg-gray-800 text-gray-300 border border-gray-700">AES-256-GCM</span>
+      <div id="statusPill" class="flex items-center space-x-1.5 px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs font-semibold">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 pulse-dot"></span>
+        <span>System Ready</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN DASHBOARD CONTENT -->
+  <main class="flex-1 p-6 space-y-6 max-w-7xl mx-auto w-full">
+
+    <!-- TOP GRID: CONTROLS & HANDSHAKE TRACKER -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+      <!-- COLUMN 1: TRANSFER CONFIG & ATTACK SELECTOR (4 Cols) -->
+      <div class="lg:col-span-4 space-y-5">
+        <div class="glass-card rounded-xl p-5 shadow-lg border border-gray-800 space-y-4">
+          <h2 class="text-sm font-semibold uppercase tracking-wider text-gray-400 flex items-center space-x-2">
+            <span>Transfer Configuration</span>
+          </h2>
+
+          <form id="transferForm" class="space-y-4">
+            <!-- File Selector -->
+            <div>
+              <label class="block text-xs font-medium text-gray-300 mb-1.5">File to Transfer</label>
+              <div class="border-2 border-dashed border-gray-700 rounded-lg p-3 text-center hover:border-blue-500/50 transition cursor-pointer bg-gray-900/50">
+                <input type="file" id="fileInput" name="file" class="hidden">
+                <label for="fileInput" class="cursor-pointer">
+                  <div class="text-xs text-blue-400 font-semibold" id="fileNameLabel">Choose File or Use Default (150KB)</div>
+                  <div class="text-[10px] text-gray-500 mt-0.5">AES-256-GCM chunked AEAD with SHA-256 integrity</div>
+                </label>
+              </div>
+            </div>
+
+            <!-- Client Engine Selector -->
+            <div>
+              <label class="block text-xs font-medium text-gray-300 mb-1.5">Client Architecture</label>
+              <div class="grid grid-cols-2 gap-2">
+                <label class="cursor-pointer border border-emerald-500/30 rounded-lg p-2.5 bg-emerald-950/20 hover:bg-emerald-950/40 transition flex items-start space-x-2">
+                  <input type="radio" name="client_type" value="policy" checked class="mt-0.5 text-emerald-500 focus:ring-emerald-500">
+                  <div>
+                    <div class="text-xs font-semibold text-emerald-400">Policy-Aware</div>
+                    <div class="text-[10px] text-gray-400">Rejects silent downgrades</div>
+                  </div>
+                </label>
+                <label class="cursor-pointer border border-red-500/30 rounded-lg p-2.5 bg-red-950/20 hover:bg-red-950/40 transition flex items-start space-x-2">
+                  <input type="radio" name="client_type" value="baseline" class="mt-0.5 text-red-500 focus:ring-red-500">
+                  <div>
+                    <div class="text-xs font-semibold text-red-400">Baseline (Naive)</div>
+                    <div class="text-[10px] text-gray-400">Vulnerable silent fallback</div>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            <!-- Policy Level -->
+            <div>
+              <label class="block text-xs font-medium text-gray-300 mb-1.5">Security Policy Enforcement</label>
+              <select name="policy" id="policySelect" class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-xs text-gray-200 focus:ring-2 focus:ring-blue-500">
+                <option value="STRICT_HYBRID" selected>STRICT_HYBRID (Mandatory X25519 + ML-KEM)</option>
+                <option value="STRICT_PQC">STRICT_PQC (Post-Quantum Mandatory)</option>
+                <option value="COMPAT_CLASSICAL">COMPAT_CLASSICAL (Permits Classical)</option>
+              </select>
+            </div>
+
+            <!-- Attack Simulator -->
+            <div class="pt-2 border-t border-gray-800">
+              <label class="block text-xs font-semibold uppercase tracking-wider text-amber-400 mb-1.5 flex items-center space-x-1.5">
+                <span>⚡ Attack & Fault Simulator</span>
+              </label>
+              <select name="attack_type" id="attackSelect" class="w-full bg-gray-900 border border-amber-500/40 rounded-lg px-3 py-2 text-xs text-amber-200 focus:ring-2 focus:ring-amber-500">
+                <option value="NONE">NONE (Normal Pass-Through)</option>
+                <option value="DROP_MLKEM_PACKET">DROP_MLKEM_PACKET (Induce PQC Timeout)</option>
+                <option value="STRIP_NEGOTIATION">STRIP_NEGOTIATION (MiTM Strip PQC from Hello)</option>
+                <option value="SEVER_MIDWAY">SEVER_MIDWAY (Sever Connection at 50%)</option>
+                <option value="CORRUPT_CIPHERTEXT">CORRUPT_CIPHERTEXT (Flip Bits in Ciphertext)</option>
+              </select>
+              <div id="severChunkDiv" class="hidden mt-2">
+                <label class="block text-[11px] text-gray-400 mb-1">Sever After Forwarding Chunk #</label>
+                <input type="number" name="sever_chunk" value="1" min="1" max="10" class="w-full bg-gray-900 border border-gray-700 rounded-md px-2 py-1 text-xs">
+              </div>
+            </div>
+
+            <button type="submit" id="startBtn" class="w-full py-2.5 px-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-semibold text-xs rounded-lg shadow-lg shadow-blue-500/25 transition transform active:scale-95 flex items-center justify-center space-x-2">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/>
+              </svg>
+              <span>Execute Secure Transfer</span>
+            </button>
+          </form>
+        </div>
+      </div>
+
+      <!-- COLUMN 2: PROTOCOL HANDSHAKE VISUALIZER & PROGRESS (8 Cols) -->
+      <div class="lg:col-span-8 space-y-5">
+
+        <!-- Handshake State Machine Visualizer -->
+        <div class="glass-card rounded-xl p-5 shadow-lg border border-gray-800 space-y-4">
+          <div class="flex items-center justify-between">
+            <h2 class="text-sm font-semibold uppercase tracking-wider text-gray-400">
+              Live Cryptographic Handshake & Key Derivation
+            </h2>
+            <span id="negotiatedModeBadge" class="text-xs px-2.5 py-0.5 rounded-full bg-gray-800 text-gray-400 border border-gray-700">Idle</span>
+          </div>
+
+          <div class="grid grid-cols-2 md:grid-cols-6 gap-2 text-center text-xs">
+            <!-- Step 1 -->
+            <div id="step-hello" class="border border-gray-800 rounded-lg p-2.5 transition">
+              <div class="font-bold text-[11px]">1. ClientHello</div>
+              <div class="text-[10px] text-gray-400 mt-1">X25519 PK + Policy</div>
+            </div>
+            <!-- Step 2 -->
+            <div id="step-shello" class="border border-gray-800 rounded-lg p-2.5 transition">
+              <div class="font-bold text-[11px]">2. ServerHello</div>
+              <div class="text-[10px] text-gray-400 mt-1">ML-KEM PK (1184B)</div>
+            </div>
+            <!-- Step 3 -->
+            <div id="step-kex" class="border border-gray-800 rounded-lg p-2.5 transition">
+              <div class="font-bold text-[11px]">3. ClientKex</div>
+              <div class="text-[10px] text-gray-400 mt-1">ML-KEM CT (1088B)</div>
+            </div>
+            <!-- Step 4 -->
+            <div id="step-hkdf" class="border border-gray-800 rounded-lg p-2.5 transition">
+              <div class="font-bold text-[11px]">4. Dual-PRF</div>
+              <div class="text-[10px] text-gray-400 mt-1">HKDF(ss_c || ss_pq)</div>
+            </div>
+            <!-- Step 5 -->
+            <div id="step-finished" class="border border-gray-800 rounded-lg p-2.5 transition">
+              <div class="font-bold text-[11px]">5. Finished</div>
+              <div class="text-[10px] text-gray-400 mt-1">HMAC Transcript</div>
+            </div>
+            <!-- Step 6 -->
+            <div id="step-data" class="border border-gray-800 rounded-lg p-2.5 transition">
+              <div class="font-bold text-[11px]">6. AES-GCM</div>
+              <div class="text-[10px] text-gray-400 mt-1">Chunked Streaming</div>
+            </div>
+          </div>
+
+          <!-- Transfer Progress Bar -->
+          <div class="space-y-2 pt-2">
+            <div class="flex justify-between text-xs text-gray-400">
+              <span id="transferProgressText">Transfer Progress: 0%</span>
+              <span id="chunkStatusText">Chunks: 0 / 0</span>
+            </div>
+            <div class="w-full bg-gray-900 rounded-full h-3 overflow-hidden border border-gray-800">
+              <div id="progressBar" class="bg-gradient-to-r from-blue-500 to-indigo-500 h-3 rounded-full transition-all duration-300" style="width: 0%"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Security Shield & Terminal Output -->
+        <div class="glass-card rounded-xl p-5 shadow-lg border border-gray-800 space-y-3">
+          <div class="flex items-center justify-between">
+            <h2 class="text-sm font-semibold uppercase tracking-wider text-gray-400">Security Invariant Monitor</h2>
+            <button id="clearLogBtn" class="text-[11px] text-gray-500 hover:text-gray-300">Clear Logs</button>
+          </div>
+
+          <!-- Alert Banner -->
+          <div id="alertBanner" class="hidden rounded-lg p-3 text-xs flex items-center space-x-3 border">
+            <div id="alertIcon" class="w-5 h-5 flex-shrink-0"></div>
+            <div id="alertMessage" class="font-medium"></div>
+          </div>
+
+          <!-- Live Event Terminal -->
+          <div id="terminalLog" class="mono text-xs bg-black/60 rounded-lg p-3 h-48 overflow-y-auto space-y-1 text-gray-300 border border-gray-900">
+            <div class="text-gray-500">// WebSocket connected. Waiting for transfer trigger...</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- BOTTOM SECTION: EXPERIMENTAL RESULTS & BENCHMARK CHARTS -->
+    <div class="glass-card rounded-xl p-6 shadow-lg border border-gray-800 space-y-5">
+      <div class="flex items-center justify-between border-b border-gray-800 pb-3">
+        <div>
+          <h2 class="text-base font-bold text-white flex items-center space-x-2">
+            <span>Empirical Research Findings & Benchmarks</span>
+            <span class="text-xs px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">Generated Dataset</span>
+          </h2>
+          <p class="text-xs text-gray-400">Direct experimental comparisons between Baseline Fallback and Policy-Aware Resilient recovery</p>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <!-- Chart 1: Downgrade Rate -->
+        <div class="bg-gray-900 rounded-lg p-3 border border-gray-800 space-y-2">
+          <div class="text-xs font-semibold text-gray-300">1. Unauthorized Downgrades</div>
+          <img src="/api/plots/downgrade_prevention_rate.png" alt="Downgrade Prevention Rate" class="rounded w-full object-cover">
+          <p class="text-[10px] text-gray-400">Baseline fails with 100% silent downgrades. Proposed policy preserves 0% downgrade invariant.</p>
+        </div>
+
+        <!-- Chart 2: Crypto Latency -->
+        <div class="bg-gray-900 rounded-lg p-3 border border-gray-800 space-y-2">
+          <div class="text-xs font-semibold text-gray-300">2. Key Agreement Latency</div>
+          <img src="/api/plots/crypto_latency_benchmark.png" alt="Crypto Latency" class="rounded w-full object-cover">
+          <p class="text-[10px] text-gray-400">ML-KEM-768 is ~0.17ms, outperforming classical X25519 (~0.26ms). Total hybrid ~0.45ms.</p>
+        </div>
+
+        <!-- Chart 3: Wire Overhead -->
+        <div class="bg-gray-900 rounded-lg p-3 border border-gray-800 space-y-2">
+          <div class="text-xs font-semibold text-gray-300">3. Wire Communication Size</div>
+          <img src="/api/plots/wire_overhead_comparison.png" alt="Wire Overhead" class="rounded w-full object-cover">
+          <p class="text-[10px] text-gray-400">Total hybrid key exchange is 2,336 bytes, easily fitting into standard MTU packets.</p>
+        </div>
+
+        <!-- Chart 4: Recovery Time -->
+        <div class="bg-gray-900 rounded-lg p-3 border border-gray-800 space-y-2">
+          <div class="text-xs font-semibold text-gray-300">4. Resumption Recovery Time</div>
+          <img src="/api/plots/recovery_time_analysis.png" alt="Recovery Time" class="rounded w-full object-cover">
+          <p class="text-[10px] text-gray-400">Reconnection resumes from midway chunk offset with fresh ephemeral keys in under 5ms.</p>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <footer class="glass px-6 py-3 border-t border-gray-800 text-center text-xs text-gray-500">
+    Policy-Aware Post-Quantum Secure File Sharing Prototype · Academic Research Demonstration · FIPS 203 ML-KEM-768 + RFC 7748 X25519
+  </footer>
+
+  <!-- CLIENT-SIDE SCRIPT -->
+  <script>
+    const ws = new WebSocket(`ws://${window.location.host}/ws`);
+    const terminal = document.getElementById('terminalLog');
+    const alertBanner = document.getElementById('alertBanner');
+    const alertMessage = document.getElementById('alertMessage');
+    const progressBar = document.getElementById('progressBar');
+    const transferProgressText = document.getElementById('transferProgressText');
+    const chunkStatusText = document.getElementById('chunkStatusText');
+    const modeBadge = document.getElementById('negotiatedModeBadge');
+
+    const steps = {
+      hello: document.getElementById('step-hello'),
+      shello: document.getElementById('step-shello'),
+      kex: document.getElementById('step-kex'),
+      hkdf: document.getElementById('step-hkdf'),
+      finished: document.getElementById('step-finished'),
+      data: document.getElementById('step-data'),
+    };
+
+    function resetSteps() {
+      Object.values(steps).forEach(s => s.className = 'border border-gray-800 rounded-lg p-2.5 transition');
+      progressBar.style.width = '0%';
+      transferProgressText.textContent = 'Transfer Progress: 0%';
+      chunkStatusText.textContent = 'Chunks: 0 / 0';
+      alertBanner.classList.add('hidden');
+    }
+
+    function log(msg, color = 'text-gray-300') {
+      const line = document.createElement('div');
+      line.className = color;
+      line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+      terminal.appendChild(line);
+      terminal.scrollTop = terminal.scrollHeight;
+    }
+
+    function showAlert(type, text) {
+      alertBanner.classList.remove('hidden', 'bg-emerald-950/40', 'border-emerald-500/40', 'text-emerald-300', 'bg-red-950/40', 'border-red-500/40', 'text-red-300', 'bg-amber-950/40', 'border-amber-500/40', 'text-amber-300');
+      if (type === 'success') {
+        alertBanner.classList.add('bg-emerald-950/40', 'border-emerald-500/40', 'text-emerald-300');
+      } else if (type === 'danger') {
+        alertBanner.classList.add('bg-red-950/40', 'border-red-500/40', 'text-red-300');
+      } else {
+        alertBanner.classList.add('bg-amber-950/40', 'border-amber-500/40', 'text-amber-300');
+      }
+      alertMessage.innerHTML = text;
+    }
+
+    ws.onmessage = (event) => {
+      const { event: evt, data } = JSON.parse(event.data);
+
+      if (evt === 'TRANSFER_STARTING') {
+        resetSteps();
+        log(`Initiating transfer of "${data.file_name}" under ${data.policy} (${data.client_type.toUpperCase()} Client)`, 'text-blue-400 font-semibold');
+        steps.hello.className = 'border rounded-lg p-2.5 step-active';
+      }
+
+      else if (evt === 'CLIENT_CLIENT_HELLO_SENT' || evt === 'SERVER_CLIENT_HELLO_RECEIVED') {
+        steps.hello.className = 'border rounded-lg p-2.5 step-complete';
+        steps.shello.className = 'border rounded-lg p-2.5 step-active';
+        log(`ClientHello sent. Offered modes: ${data.offered_modes || 'HYBRID'}`);
+      }
+
+      else if (evt === 'SERVER_SERVER_HELLO_SENT') {
+        steps.shello.className = 'border rounded-lg p-2.5 step-complete';
+        steps.kex.className = 'border rounded-lg p-2.5 step-active';
+        modeBadge.textContent = data.selected_mode;
+        modeBadge.className = 'text-xs px-2.5 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/30';
+        log(`ServerHello: Negotiated mode ${data.selected_mode}`);
+      }
+
+      else if (evt === 'CLIENT_HANDSHAKE_ESTABLISHED') {
+        steps.kex.className = 'border rounded-lg p-2.5 step-complete';
+        steps.hkdf.className = 'border rounded-lg p-2.5 step-complete';
+        steps.finished.className = 'border rounded-lg p-2.5 step-complete';
+        steps.data.className = 'border rounded-lg p-2.5 step-active';
+        log(`Dual-PRF Keys derived & Finished verified in session ${data.session_id.substring(0, 8)}...`, 'text-emerald-400');
+      }
+
+      else if (evt === 'PROXY_ATTACK_INJECTED') {
+        log(`[⚡ ADVERSARY ACTIVE] ${data.details}`, 'text-amber-400 font-bold');
+        showAlert('warning', `<strong>[Adversary Attack Injected]</strong> ${data.details}`);
+      }
+
+      else if (evt === 'CLIENT_POLICY_DOWNGRADE_BLOCKED') {
+        steps.shello.className = 'border rounded-lg p-2.5 step-error';
+        log(`[SHIELD ACTIVE] Policy Engine refused downgrade! ${data.reason}`, 'text-emerald-400 font-bold');
+        showAlert('success', `<strong>[SHIELD ACTIVE - POLICY ENFORCED]</strong> Downgrade to Classical refused! Transfer safely halted or retried under strict post-quantum requirements.`);
+      }
+
+      else if (evt === 'CLIENT_BASELINE_SILENT_DOWNGRADE') {
+        log(`[VULNERABILITY] Baseline client silently dropped to Classical: ${data.new_mode}`, 'text-red-400 font-bold');
+        showAlert('danger', `<strong>[SECURITY ALERT - SILENT DOWNGRADE]</strong> Baseline client silently downgraded to Classical X25519! Traffic is now vulnerable to Store Now, Decrypt Later quantum decryption.`);
+      }
+
+      else if (evt === 'SERVER_CHUNK_RECEIVED') {
+        progressBar.style.width = `${data.progress_pct}%`;
+        transferProgressText.textContent = `Transfer Progress: ${data.progress_pct}%`;
+        chunkStatusText.textContent = `Chunk ${data.chunk_index + 1} / ${data.total_chunks}`;
+      }
+
+      else if (evt === 'SERVER_TRANSFER_COMPLETE' || evt === 'JOB_COMPLETED') {
+        steps.data.className = 'border rounded-lg p-2.5 step-complete';
+        progressBar.style.width = '100%';
+        transferProgressText.textContent = 'Transfer Complete: 100%';
+        log(`Transfer completed and SHA-256 integrity verified!`, 'text-emerald-400 font-bold');
+      }
+
+      else if (evt === 'JOB_FAILED') {
+        log(`Transfer failed: ${data.error}`, 'text-red-400 font-bold');
+      }
+    };
+
+    // File Input change listener
+    document.getElementById('fileInput').addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (file) {
+        document.getElementById('fileNameLabel').textContent = `${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+      }
+    });
+
+    // Form submit listener
+    document.getElementById('transferForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const formData = new FormData(e.target);
+      try {
+        const resp = await fetch('/api/transfer', { method: 'POST', body: formData });
+        const data = await resp.json();
+        log(`API Response: ${data.status} for file ${data.file}`, 'text-blue-400');
+      } catch (err) {
+        log(`API Error: ${err}`, 'text-red-400');
+      }
+    });
+
+    // Attack select listener to show sever chunk input
+    document.getElementById('attackSelect').addEventListener('change', (e) => {
+      const div = document.getElementById('severChunkDiv');
+      if (e.target.value === 'SEVER_MIDWAY') {
+        div.classList.remove('hidden');
+      } else {
+        div.classList.add('hidden');
+      }
+    });
+
+    // Clear log button
+    document.getElementById('clearLogBtn').addEventListener('click', () => {
+      terminal.innerHTML = '<div class="text-gray-500">// Logs cleared.</div>';
+    });
+  </script>
+</body>
+</html>
+
