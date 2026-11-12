@@ -1,5 +1,5 @@
 Primitive,Type,Avg Time (ms),Public Key Size (Bytes),Ciphertext / Exchange Size (Bytes),Shared Secret Size (Bytes),Post-Quantum Hardness
-X25519 (Classical),Key Exchange,0.264,32,32,32,No (Broken by Shor's Algo)
-ML-KEM-768 (NIST FIPS 203),Key Encapsulation,0.167,1184,1088,32,Yes (Category 3 Lattice)
-Hybrid (X25519 + ML-KEM + HKDF),Complete Dual-PRF Handshake,0.446,1216,1120,64,Yes (Dual-PRF Guaranteed)
-AES-256-GCM AEAD (64KB Chunks),Symmetric Encryption/Auth,0.038,32,65552,32,Throughput: 3309.1 MB/s
+X25519 (Classical),Key Exchange,0.252,32,32,32,No (Broken by Shor's Algo)
+ML-KEM-768 (NIST FIPS 203),Key Encapsulation,0.147,1184,1088,32,Yes (Category 3 Lattice)
+Hybrid (X25519 + ML-KEM + HKDF),Complete Dual-PRF Handshake,0.415,1216,1120,64,Yes (Dual-PRF Guaranteed)
+AES-256-GCM AEAD (64KB Chunks),Symmetric Encryption/Auth,0.03,32,65552,32,Throughput: 4162.5 MB/s

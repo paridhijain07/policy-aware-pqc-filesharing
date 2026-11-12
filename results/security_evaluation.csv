@@ -1,21 +1,21 @@
-Trial,Architecture,Attack Vector,Negotiated Mode,Unauthorized Downgrade,Security Policy Preserved
-1,Baseline (Naive Fallback),ML-KEM Packet Drop,CLASSICAL_X25519,True,False
-2,Baseline (Naive Fallback),ML-KEM Packet Drop,CLASSICAL_X25519,True,False
-3,Baseline (Naive Fallback),ML-KEM Packet Drop,CLASSICAL_X25519,True,False
-4,Baseline (Naive Fallback),ML-KEM Packet Drop,CLASSICAL_X25519,True,False
-5,Baseline (Naive Fallback),ML-KEM Packet Drop,CLASSICAL_X25519,True,False
-6,Baseline (Naive Fallback),ML-KEM Packet Drop,CLASSICAL_X25519,True,False
-7,Baseline (Naive Fallback),ML-KEM Packet Drop,CLASSICAL_X25519,True,False
-8,Baseline (Naive Fallback),ML-KEM Packet Drop,CLASSICAL_X25519,True,False
-9,Baseline (Naive Fallback),ML-KEM Packet Drop,CLASSICAL_X25519,True,False
-10,Baseline (Naive Fallback),ML-KEM Packet Drop,CLASSICAL_X25519,True,False
-1,Policy-Aware (Proposed),ML-KEM Packet Drop,HYBRID_X25519_MLKEM768,False,True
-2,Policy-Aware (Proposed),ML-KEM Packet Drop,HYBRID_X25519_MLKEM768,False,True
-3,Policy-Aware (Proposed),ML-KEM Packet Drop,HYBRID_X25519_MLKEM768,False,True
-4,Policy-Aware (Proposed),ML-KEM Packet Drop,HYBRID_X25519_MLKEM768,False,True
-5,Policy-Aware (Proposed),ML-KEM Packet Drop,HYBRID_X25519_MLKEM768,False,True
-6,Policy-Aware (Proposed),ML-KEM Packet Drop,HYBRID_X25519_MLKEM768,False,True
-7,Policy-Aware (Proposed),ML-KEM Packet Drop,HYBRID_X25519_MLKEM768,False,True
-8,Policy-Aware (Proposed),ML-KEM Packet Drop,HYBRID_X25519_MLKEM768,False,True
-9,Policy-Aware (Proposed),ML-KEM Packet Drop,HYBRID_X25519_MLKEM768,False,True
-10,Policy-Aware (Proposed),ML-KEM Packet Drop,HYBRID_X25519_MLKEM768,False,True
+Trial,Architecture,Attack Vector,Negotiated Mode,Unauthorized Downgrade,Security Policy Preserved,Attack_Rejected,CPU_Delta_%,Memory_RSS_Bytes
+1,Baseline (Naive Fallback),ML-KEM Packet Drop,CLASSICAL_X25519,True,False,False,40.1,120602624
+2,Baseline (Naive Fallback),ML-KEM Packet Drop,CLASSICAL_X25519,True,False,False,25.2,120795136
+3,Baseline (Naive Fallback),ML-KEM Packet Drop,CLASSICAL_X25519,True,False,False,19.8,121085952
+4,Baseline (Naive Fallback),ML-KEM Packet Drop,CLASSICAL_X25519,True,False,False,40.1,121376768
+5,Baseline (Naive Fallback),ML-KEM Packet Drop,CLASSICAL_X25519,True,False,False,33.6,121376768
+6,Baseline (Naive Fallback),ML-KEM Packet Drop,CLASSICAL_X25519,True,False,False,49.6,121376768
+7,Baseline (Naive Fallback),ML-KEM Packet Drop,CLASSICAL_X25519,True,False,False,40.1,121376768
+8,Baseline (Naive Fallback),ML-KEM Packet Drop,CLASSICAL_X25519,True,False,False,20.0,121483264
+9,Baseline (Naive Fallback),ML-KEM Packet Drop,CLASSICAL_X25519,True,False,False,20.0,121499648
+10,Baseline (Naive Fallback),ML-KEM Packet Drop,CLASSICAL_X25519,True,False,False,40.1,121499648
+1,Policy-Aware (Proposed),ML-KEM Packet Drop,HYBRID_X25519_MLKEM768,False,True,True,20.0,121499648
+2,Policy-Aware (Proposed),ML-KEM Packet Drop,HYBRID_X25519_MLKEM768,False,True,True,60.1,121499648
+3,Policy-Aware (Proposed),ML-KEM Packet Drop,HYBRID_X25519_MLKEM768,False,True,True,16.6,121503744
+4,Policy-Aware (Proposed),ML-KEM Packet Drop,HYBRID_X25519_MLKEM768,False,True,True,14.3,120602624
+5,Policy-Aware (Proposed),ML-KEM Packet Drop,HYBRID_X25519_MLKEM768,False,True,True,24.8,120692736
+6,Policy-Aware (Proposed),ML-KEM Packet Drop,HYBRID_X25519_MLKEM768,False,True,True,33.2,121012224
+7,Policy-Aware (Proposed),ML-KEM Packet Drop,HYBRID_X25519_MLKEM768,False,True,True,33.6,121282560
+8,Policy-Aware (Proposed),ML-KEM Packet Drop,HYBRID_X25519_MLKEM768,False,True,True,39.6,121544704
+9,Policy-Aware (Proposed),ML-KEM Packet Drop,HYBRID_X25519_MLKEM768,False,True,True,33.6,121802752
+10,Policy-Aware (Proposed),ML-KEM Packet Drop,HYBRID_X25519_MLKEM768,False,True,True,20.0,121802752

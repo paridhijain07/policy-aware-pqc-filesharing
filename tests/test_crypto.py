@@ -161,3 +161,31 @@ def test_chunked_aead_cipher_integrity():
             is_final=True
         )
 
+
+
+def test_hybrid_combiner_non_commutative():
+    """Verify Dual-PRF construction binds BOTH secrets: swapping ss_classical/ss_pqc produces different keys."""
+    ss_a = os.urandom(32)
+    ss_b = os.urandom(32)
+    session_id = os.urandom(16)
+    salt = os.urandom(64)
+    transcript_hash = os.urandom(32)
+
+    keys_ab = HybridKeyDerivation.derive_keys(
+        mode="HYBRID_X25519_MLKEM768",
+        session_id=session_id,
+        salt=salt,
+        transcript_hash=transcript_hash,
+        ss_classical=ss_a,
+        ss_pqc=ss_b,
+    )
+    keys_ba = HybridKeyDerivation.derive_keys(
+        mode="HYBRID_X25519_MLKEM768",
+        session_id=session_id,
+        salt=salt,
+        transcript_hash=transcript_hash,
+        ss_classical=ss_b,
+        ss_pqc=ss_a,
+    )
+    # Two-step Dual-PRF must NOT be commutative — both secrets are distinguishably bound
+    assert keys_ab.enc_key != keys_ba.enc_key, "Dual-PRF must not be commutative: swapping secrets must yield different keys"

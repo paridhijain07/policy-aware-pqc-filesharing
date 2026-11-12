@@ -116,6 +116,9 @@
                 <option value="NONE">NONE (Normal Pass-Through)</option>
                 <option value="DROP_MLKEM_PACKET">DROP_MLKEM_PACKET (Induce PQC Timeout)</option>
                 <option value="STRIP_NEGOTIATION">STRIP_NEGOTIATION (MiTM Strip PQC from Hello)</option>
+                <option value="DOWNGRADE_SERVER_HELLO">DOWNGRADE_SERVER_HELLO (MiTM Tamper ServerHello)</option>
+                <option value="DOWNGRADE_ON_RETRY">DOWNGRADE_ON_RETRY (Fail Attempt 1 + Strip on Retry)</option>
+                <option value="REPLAY_HANDSHAKE">REPLAY_HANDSHAKE (Inject Captured Stale Handshake)</option>
                 <option value="SEVER_MIDWAY">SEVER_MIDWAY (Sever Connection at 50%)</option>
                 <option value="CORRUPT_CIPHERTEXT">CORRUPT_CIPHERTEXT (Flip Bits in Ciphertext)</option>
               </select>

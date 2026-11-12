@@ -16,6 +16,9 @@ class AttackType(str, Enum):
     CORRUPT_CIPHERTEXT = "CORRUPT_CIPHERTEXT"       # Bit-flips encrypted chunk
     REPLAY_HANDSHAKE = "REPLAY_HANDSHAKE"           # Injects captured previous session keys
     INJECT_LATENCY = "INJECT_LATENCY"               # Injects delay exceeding socket timeout
+    DOWNGRADE_SERVER_HELLO = "DOWNGRADE_SERVER_HELLO" # MiTM alters ServerHello to force Classical
+    DOWNGRADE_ON_RETRY = "DOWNGRADE_ON_RETRY"       # Drops attempt 1, tampers attempt 2 to force Classical
+    INTERRUPT_AFTER_CLIENT_HELLO = "INTERRUPT_AFTER_CLIENT_HELLO"  # Severs connection after ClientHello, before ServerHello
 
 
 @dataclass

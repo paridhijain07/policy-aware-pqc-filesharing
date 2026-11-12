@@ -5,6 +5,7 @@ and resilient resume handling.
 """
 
 import os
+import time
 import asyncio
 import logging
 from typing import Dict, Optional, Callable
@@ -18,6 +19,8 @@ from protocol.messages import (
     FileChunk,
     ResumeRequest,
     ErrorMessage,
+    DownloadRequest,
+    DownloadResponse,
 )
 from protocol.transcript import HandshakeTranscript
 from policy.modes import SecurityMode
@@ -39,11 +42,13 @@ class FileSharingServer:
         host: str = "127.0.0.1",
         port: int = 8765,
         storage_dir: str = "storage/server",
+        session_ttl_sec: float = 300.0,
         event_callback: Optional[Callable[[str, Dict], None]] = None
     ):
         self.host = host
         self.port = port
         self.storage_dir = storage_dir
+        self.session_ttl_sec = session_ttl_sec
         self.event_callback = event_callback
         self._server = None
         self._active_sessions: Dict[bytes, Dict] = {}
@@ -86,6 +91,20 @@ class FileSharingServer:
                 raise ValueError("Expected CLIENT_HELLO message")
 
             client_hello = ClientHello.from_dict(msg_dict)
+
+            # Replay and Stale Session Detection
+            if client_hello.session_id in self._active_sessions:
+                s_info = self._active_sessions[client_hello.session_id]
+                if time.time() - s_info.get("created_at", 0) > self.session_ttl_sec:
+                    logger.warning(f"Handshake references expired session_id {client_hello.session_id.hex()}")
+                    err = ErrorMessage(code="SESSION_EXPIRED", description="Handshake references an expired session", is_fatal=True)
+                else:
+                    logger.warning(f"Replay detected: duplicate session_id {client_hello.session_id.hex()}")
+                    err = ErrorMessage(code="SESSION_REPLAY_DETECTED", description="Replay of existing session_id detected", is_fatal=True)
+                await AsyncTransport.send_message(writer, err.to_dict())
+                self._emit("REPLAY_DETECTED", {"session_id": client_hello.session_id.hex(), "code": err.code})
+                return
+
             transcript.update(msg_dict)
             self._emit("CLIENT_HELLO_RECEIVED", {
                 "transfer_job_id": client_hello.transfer_job_id,
@@ -190,6 +209,13 @@ class FileSharingServer:
                 "session_id": client_hello.session_id.hex(),
                 "mode": selected_mode.value,
             })
+            self._active_sessions[client_hello.session_id] = {
+                "transfer_job_id": client_hello.transfer_job_id,
+                "mode": selected_mode.value,
+                "created_at": time.time(),
+                "status": "ESTABLISHED",
+                "client_addr": client_addr
+            }
 
             # 8. Initialize AEAD Cipher for data transmission
             cipher = ChunkedAEADCipher(
@@ -199,7 +225,7 @@ class FileSharingServer:
             )
 
             # 9. Handle File Transfer or Resumption Loop
-            await self._process_data_stream(reader, writer, cipher, client_hello.transfer_job_id)
+            await self._process_data_stream(reader, writer, cipher, client_hello.transfer_job_id, client_hello.session_id)
 
         except (ConnectionClosedError, ProtocolTimeoutError) as e:
             logger.warning(f"Connection ended prematurely: {e}")
@@ -219,7 +245,8 @@ class FileSharingServer:
         reader: asyncio.StreamReader,
         writer: asyncio.StreamWriter,
         cipher: ChunkedAEADCipher,
-        transfer_job_id: str
+        transfer_job_id: str,
+        session_id: bytes
     ):
         file_meta: Optional[FileMetadata] = None
 
@@ -227,7 +254,59 @@ class FileSharingServer:
             msg_dict = await AsyncTransport.receive_message(reader, timeout=15.0)
             msg_type = msg_dict.get("type")
 
-            if msg_type == MessageType.RESUME_REQUEST.value:
+            if msg_type == MessageType.DOWNLOAD_REQUEST.value:
+                req = DownloadRequest.from_dict(msg_dict)
+                file_path = os.path.join(self.storage_dir, req.file_name)
+                if not os.path.exists(file_path):
+                    err = ErrorMessage(
+                        code="FILE_NOT_FOUND",
+                        description=f"Requested file '{req.file_name}' not found",
+                        is_fatal=True
+                    )
+                    await AsyncTransport.send_message(writer, err.to_dict())
+                    return
+
+                f_size, t_chunks, f_hash = FileManager.get_file_info(file_path)
+                file_id = os.urandom(16)
+                resp = DownloadResponse(
+                    session_id=session_id,
+                    file_id=file_id,
+                    file_name=req.file_name,
+                    file_size=f_size,
+                    total_chunks=t_chunks,
+                    sha256_hash=f_hash,
+                    status="READY"
+                )
+                await AsyncTransport.send_message(writer, resp.to_dict())
+
+                for index, chunk_data, is_final in FileManager.read_chunks(file_path):
+                    nonce, ct = cipher.encrypt_chunk(
+                        file_id=file_id,
+                        chunk_index=index,
+                        total_chunks=t_chunks,
+                        plaintext=chunk_data,
+                        is_final=is_final
+                    )
+                    chunk_msg = FileChunk(
+                        session_id=session_id,
+                        file_id=file_id,
+                        chunk_index=index,
+                        total_chunks=t_chunks,
+                        is_final=is_final,
+                        nonce=nonce,
+                        ciphertext=ct
+                    )
+                    await AsyncTransport.send_message(writer, chunk_msg.to_dict())
+
+                ack = await AsyncTransport.receive_message(reader, timeout=10.0)
+                if ack.get("status") == "COMPLETED_VERIFIED":
+                    self._emit("DOWNLOAD_COMPLETE", {
+                        "file_name": req.file_name,
+                        "verified_sha256": f_hash
+                    })
+                break
+
+            elif msg_type == MessageType.RESUME_REQUEST.value:
                 req = ResumeRequest.from_dict(msg_dict)
                 last_received = self.received_chunks_tracker.get(req.transfer_job_id, 0)
                 ack = {
