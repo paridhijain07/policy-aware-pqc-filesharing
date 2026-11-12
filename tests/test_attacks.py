@@ -425,11 +425,11 @@ async def test_replayed_session_id_rejected(tmp_path):
     Expected: Server detects duplicate session_id in active session registry and rejects with SESSION_REPLAY_DETECTED.
     """
     server_dir = str(tmp_path / "server_storage")
-    server = FileSharingServer(host="127.0.0.1", port=9093, storage_dir=server_dir)
+    server = FileSharingServer(host="127.0.0.1", port=9083, storage_dir=server_dir)
     await server.start()
 
     try:
-        reader, writer = await asyncio.open_connection("127.0.0.1", 9093)
+        reader, writer = await asyncio.open_connection("127.0.0.1", 9083)
         client_nonce = os.urandom(32)
         session_id = os.urandom(16)
         _, pub = X25519KeyExchange.generate_keypair()
@@ -456,7 +456,7 @@ async def test_replayed_session_id_rejected(tmp_path):
         await writer.wait_closed()
 
         # Attacker tries to initiate a new handshake reusing the exact same session_id
-        reader2, writer2 = await asyncio.open_connection("127.0.0.1", 9093)
+        reader2, writer2 = await asyncio.open_connection("127.0.0.1", 9083)
         ch_replay = ClientHello(
             client_nonce=os.urandom(32),
             session_id=session_id,
@@ -491,12 +491,12 @@ async def test_reconnection_after_expired_session(tmp_path):
     with open(test_file, "wb") as f:
         f.write(content)
 
-    server = FileSharingServer(host="127.0.0.1", port=9095, storage_dir=server_dir, session_ttl_sec=0.2)
+    server = FileSharingServer(host="127.0.0.1", port=9085, storage_dir=server_dir, session_ttl_sec=0.2)
     await server.start()
 
     try:
         # First transfer
-        client = PolicyAwareClient(server_host="127.0.0.1", server_port=9095, max_retries=1)
+        client = PolicyAwareClient(server_host="127.0.0.1", server_port=9085, max_retries=1)
         res1 = await client.transfer_file(test_file, job_id="job-expiry-test")
         assert res1["status"] == "SUCCESS"
 
@@ -504,7 +504,7 @@ async def test_reconnection_after_expired_session(tmp_path):
         await asyncio.sleep(0.3)
 
         # Reconnection establishes fresh authenticated session and succeeds
-        client2 = PolicyAwareClient(server_host="127.0.0.1", server_port=9095, max_retries=1)
+        client2 = PolicyAwareClient(server_host="127.0.0.1", server_port=9085, max_retries=1)
         res2 = await client2.transfer_file(test_file, job_id="job-expiry-test-2")
         assert res2["status"] == "SUCCESS"
         assert res2["mode"] == SecurityMode.HYBRID_X25519_MLKEM768.value
