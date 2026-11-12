@@ -113,6 +113,23 @@ def plot_all():
         plt.close()
         print("[+] Generated: results/plots/recovery_time_analysis.png")
 
+    # --- PLOT 5: Throughput Across File Sizes ---
+    tp_csv = "results/throughput_evaluation.csv"
+    if os.path.exists(tp_csv):
+        df_tp = pd.read_csv(tp_csv)
+        summary_tp = df_tp.groupby(["File_Size_KB", "Architecture"])["Throughput_MBps"].mean().unstack()
+        fig, ax = plt.subplots(figsize=(8, 4.5))
+        summary_tp.plot(kind="bar", ax=ax, color=["#457b9d", "#2a9d8f"], edgecolor="black")
+        ax.set_xlabel("File Size (KB)", fontweight="bold")
+        ax.set_ylabel("Throughput (MB/s)", fontweight="bold")
+        ax.set_title("Data Transfer Throughput vs File Size", fontweight="bold", pad=12)
+        ax.legend(title="Architecture")
+        plt.xticks(rotation=0)
+        plt.tight_layout()
+        plt.savefig("results/plots/throughput_evaluation.png", dpi=300)
+        plt.close()
+        print("[+] Generated: results/plots/throughput_evaluation.png")
+
 
 if __name__ == "__main__":
     plot_all()

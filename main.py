@@ -26,8 +26,10 @@ def main():
     parser.add_argument("--test", action="store_true", help="Run pytest verification suite")
     parser.add_argument("--server", action="store_true", help="Run standalone server on port 8765")
     parser.add_argument("--client", action="store_true", help="Run test client file transfer")
+    parser.add_argument("--download", type=str, default=None, help="Download specified file from server")
     parser.add_argument("--file", type=str, default=None, help="Target file for client transfer")
     parser.add_argument("--policy", type=str, default="STRICT_HYBRID", choices=["STRICT_HYBRID", "STRICT_PQC", "COMPAT_CLASSICAL", "ALLOW_FALLBACK"], help="Enforcement policy")
+    parser.add_argument("--mode", type=str, default=None, choices=["HYBRID_X25519_MLKEM768", "PQC_MLKEM768", "CLASSICAL_X25519"], help="Preferred key-establishment mode")
 
     args = parser.parse_args()
 
@@ -65,10 +67,26 @@ def main():
             loop.run_until_complete(server.stop())
         return
 
-    # 4. Standalone Client
-    elif args.client:
+    # 4. Standalone Client (Upload or Download)
+    elif args.client or args.download:
         from core.client_policy import PolicyAwareClient
-        from policy.modes import PolicyLevel
+        from policy.modes import PolicyLevel, SecurityMode
+
+        pref_mode = SecurityMode(args.mode) if args.mode else None
+        client = PolicyAwareClient(
+            server_host="127.0.0.1",
+            server_port=8765,
+            policy=PolicyLevel(args.policy),
+            preferred_mode=pref_mode
+        )
+
+        if args.download:
+            download_dir = "storage/client_downloads"
+            os.makedirs(download_dir, exist_ok=True)
+            print(f"\n[*] Initiating secure download of '{args.download}' with policy '{args.policy}'...")
+            res = asyncio.run(client.download_file(file_name=args.download, dest_dir=download_dir))
+            print(f"\n[+] Download Result: {res}")
+            return
 
         target_file = args.file
         if not target_file:
@@ -78,12 +96,7 @@ def main():
                 with open(target_file, "wb") as f:
                     f.write(os.urandom(128 * 1024))
 
-        print(f"\n[*] Initiating transfer of '{target_file}' with policy '{args.policy}'...")
-        client = PolicyAwareClient(
-            server_host="127.0.0.1",
-            server_port=8765,
-            policy=PolicyLevel(args.policy)
-        )
+        print(f"\n[*] Initiating transfer of '{target_file}' with policy '{args.policy}' (preferred mode: {args.mode or 'Auto'})...")
         res = asyncio.run(client.transfer_file(target_file))
         print(f"\n[+] Transfer Result: {res}")
         return

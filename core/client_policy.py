@@ -18,6 +18,9 @@ from protocol.messages import (
     FileChunk,
     ResumeRequest,
     ErrorMessage,
+    DownloadRequest,
+    DownloadResponse,
+    b64e,
 )
 from protocol.transcript import HandshakeTranscript
 from policy.modes import SecurityMode, PolicyLevel
@@ -40,6 +43,7 @@ class PolicyAwareClient:
         server_host: str = "127.0.0.1",
         server_port: int = 8765,
         policy: PolicyLevel = PolicyLevel.STRICT_HYBRID,
+        preferred_mode: Optional[SecurityMode] = None,
         max_retries: int = 3,
         retry_delay_sec: float = 1.0,
         event_callback: Optional[Callable[[str, Dict], None]] = None
@@ -47,10 +51,151 @@ class PolicyAwareClient:
         self.server_host = server_host
         self.server_port = server_port
         self.policy = policy
+        self.preferred_mode = preferred_mode
         self.max_retries = max_retries
         self.retry_delay_sec = retry_delay_sec
         self.event_callback = event_callback
         self.policy_engine = PolicyEngine(self.policy)
+        if self.preferred_mode:
+            self.policy_engine.evaluate_negotiation(self.preferred_mode)
+
+    def _get_offered_modes(self) -> list:
+        if self.preferred_mode:
+            return [self.preferred_mode.value]
+        if self.policy == PolicyLevel.STRICT_HYBRID:
+            return [SecurityMode.HYBRID_X25519_MLKEM768.value]
+        elif self.policy == PolicyLevel.STRICT_PQC:
+            return [SecurityMode.HYBRID_X25519_MLKEM768.value, SecurityMode.PQC_MLKEM768.value]
+        elif self.policy == PolicyLevel.COMPAT_CLASSICAL:
+            return [SecurityMode.HYBRID_X25519_MLKEM768.value, SecurityMode.CLASSICAL_X25519.value]
+        else:
+            return [SecurityMode.HYBRID_X25519_MLKEM768.value, SecurityMode.CLASSICAL_X25519.value]
+
+    async def _perform_handshake(
+        self,
+        reader: asyncio.StreamReader,
+        writer: asyncio.StreamWriter,
+        job_id: str,
+        attempt: int,
+        last_negotiated_mode: Optional[SecurityMode]
+    ):
+        # 1. Prepare ephemeral keys
+        client_nonce = os.urandom(32)
+        session_id = os.urandom(16)
+        priv_x25519, pub_x25519 = X25519KeyExchange.generate_keypair()
+        offered_modes = self._get_offered_modes()
+
+        client_hello = ClientHello(
+            client_nonce=client_nonce,
+            session_id=session_id,
+            transfer_job_id=job_id,
+            offered_modes=offered_modes,
+            client_policy=self.policy.value,
+            client_x25519_pk=pub_x25519,
+        )
+
+        transcript = HandshakeTranscript()
+        c_hello_dict = client_hello.to_dict()
+        await AsyncTransport.send_message(writer, c_hello_dict)
+        transcript.update(c_hello_dict)
+
+        # 2. Receive ServerHello
+        s_hello_dict = await AsyncTransport.receive_message(reader, timeout=5.0)
+        if s_hello_dict.get("type") == MessageType.ERROR.value:
+            raise RuntimeError(f"Server error during hello: {s_hello_dict.get('description')} ({s_hello_dict.get('code')})")
+        if s_hello_dict.get("type") != MessageType.SERVER_HELLO.value:
+            raise ValueError("Expected SERVER_HELLO")
+
+        server_hello = ServerHello.from_dict(s_hello_dict)
+        transcript.update(s_hello_dict)
+
+        negotiated_mode = SecurityMode(server_hello.selected_mode)
+
+        # 3. Policy Enforcement Guard
+        if last_negotiated_mode:
+            self.policy_engine.evaluate_retry(last_negotiated_mode, negotiated_mode, attempt)
+        else:
+            self.policy_engine.evaluate_negotiation(negotiated_mode)
+
+        self._emit("POLICY_VERIFIED", {
+            "negotiated_mode": negotiated_mode.value,
+            "policy": self.policy.value,
+            "status": "APPROVED",
+        })
+
+        # 4. Perform Key Agreement
+        ss_classical = None
+        if negotiated_mode in (SecurityMode.HYBRID_X25519_MLKEM768, SecurityMode.CLASSICAL_X25519):
+            if not server_hello.server_x25519_pk:
+                raise ValueError("Missing server X25519 public key")
+            ss_classical = X25519KeyExchange.compute_shared_secret(priv_x25519, server_hello.server_x25519_pk)
+
+        ss_pqc = None
+        mlkem_ct = None
+        if negotiated_mode in (SecurityMode.HYBRID_X25519_MLKEM768, SecurityMode.PQC_MLKEM768):
+            if not server_hello.server_mlkem_pk:
+                raise ValueError("Missing server ML-KEM public key")
+            kem = MLKEM768KeyExchange()
+            ss_pqc, mlkem_ct = kem.encapsulate(server_hello.server_mlkem_pk)
+
+        # 5. Derive keys & send ClientKex
+        salt = client_nonce + server_hello.server_nonce
+        kex_template = ClientKex(
+            session_id=session_id,
+            mlkem_ciphertext=mlkem_ct,
+            client_finished_mac=b""
+        )
+        kex_dict_for_transcript = kex_template.to_dict()
+        kex_dict_for_transcript.pop("client_finished_mac", None)
+        transcript.update(kex_dict_for_transcript)
+        transcript_hash = transcript.current_digest()
+
+        session_keys = HybridKeyDerivation.derive_keys(
+            mode=negotiated_mode.value,
+            session_id=session_id,
+            salt=salt,
+            transcript_hash=transcript_hash,
+            ss_classical=ss_classical,
+            ss_pqc=ss_pqc
+        )
+
+        client_fin_tag = HybridKeyDerivation.compute_finished_tag(
+            session_keys.mac_key, "CLIENT", transcript_hash
+        )
+        client_kex = ClientKex(
+            session_id=session_id,
+            mlkem_ciphertext=mlkem_ct,
+            client_finished_mac=client_fin_tag
+        )
+        await AsyncTransport.send_message(writer, client_kex.to_dict())
+
+        # 6. Receive ServerFinished
+        fin_dict = await AsyncTransport.receive_message(reader, timeout=5.0)
+        if fin_dict.get("type") == MessageType.ERROR.value:
+            raise RuntimeError(f"Handshake rejected: {fin_dict.get('description')} ({fin_dict.get('code')})")
+        if fin_dict.get("type") != MessageType.SERVER_FINISHED.value:
+            raise ValueError("Expected SERVER_FINISHED")
+
+        server_fin = ServerFinished.from_dict(fin_dict)
+        is_fin_valid = HybridKeyDerivation.verify_finished_tag(
+            session_keys.mac_key, "SERVER", transcript_hash, server_fin.server_finished_mac
+        )
+        if not is_fin_valid:
+            raise RuntimeError("Server Finished MAC verification failed! Server handshake compromised.")
+
+        self._emit("HANDSHAKE_ESTABLISHED", {
+            "mode": negotiated_mode.value,
+            "attempt": attempt,
+            "session_id": session_id.hex(),
+        })
+
+        cipher = ChunkedAEADCipher(
+            enc_key=session_keys.enc_key,
+            iv_salt=session_keys.iv_salt,
+            session_id=session_keys.session_id
+        )
+
+        return session_id, session_keys, negotiated_mode, cipher
 
     def _emit(self, event_type: str, data: Dict):
         if self.event_callback:
@@ -94,129 +239,10 @@ class PolicyAwareClient:
 
                 reader, writer = await asyncio.open_connection(self.server_host, self.server_port)
 
-                # 1. Prepare ephemeral keys
-                client_nonce = os.urandom(32)
-                session_id = os.urandom(16)
-                priv_x25519, pub_x25519 = X25519KeyExchange.generate_keypair()
-
-                # Offered modes based on policy (Never offering classical when STRICT_HYBRID is requested)
-                offered_modes = [SecurityMode.HYBRID_X25519_MLKEM768.value]
-                if self.policy == PolicyLevel.COMPAT_CLASSICAL:
-                    offered_modes.append(SecurityMode.CLASSICAL_X25519.value)
-
-                client_hello = ClientHello(
-                    client_nonce=client_nonce,
-                    session_id=session_id,
-                    transfer_job_id=job_id,
-                    offered_modes=offered_modes,
-                    client_policy=self.policy.value,
-                    client_x25519_pk=pub_x25519,
+                session_id, session_keys, negotiated_mode, cipher = await self._perform_handshake(
+                    reader, writer, job_id, attempt, last_negotiated_mode
                 )
-
-                transcript = HandshakeTranscript()
-                c_hello_dict = client_hello.to_dict()
-                await AsyncTransport.send_message(writer, c_hello_dict)
-                transcript.update(c_hello_dict)
-
-                # 2. Receive ServerHello
-                s_hello_dict = await AsyncTransport.receive_message(reader, timeout=5.0)
-                if s_hello_dict.get("type") == MessageType.ERROR.value:
-                    raise RuntimeError(f"Server error during hello: {s_hello_dict.get('description')}")
-                if s_hello_dict.get("type") != MessageType.SERVER_HELLO.value:
-                    raise ValueError("Expected SERVER_HELLO")
-
-                server_hello = ServerHello.from_dict(s_hello_dict)
-                transcript.update(s_hello_dict)
-
-                negotiated_mode = SecurityMode(server_hello.selected_mode)
-
-                # 3. CRUCIAL POLICY ENFORCEMENT GUARD:
-                # Validates invariant: negotiation must strictly satisfy transfer policy
-                if last_negotiated_mode:
-                    self.policy_engine.evaluate_retry(last_negotiated_mode, negotiated_mode, attempt)
-                else:
-                    self.policy_engine.evaluate_negotiation(negotiated_mode)
-
                 last_negotiated_mode = negotiated_mode
-                self._emit("POLICY_VERIFIED", {
-                    "negotiated_mode": negotiated_mode.value,
-                    "policy": self.policy.value,
-                    "status": "APPROVED",
-                })
-
-                # 4. Perform Key Agreement
-                ss_classical = None
-                if negotiated_mode in (SecurityMode.HYBRID_X25519_MLKEM768, SecurityMode.CLASSICAL_X25519):
-                    if not server_hello.server_x25519_pk:
-                        raise ValueError("Missing server X25519 public key")
-                    ss_classical = X25519KeyExchange.compute_shared_secret(priv_x25519, server_hello.server_x25519_pk)
-
-                ss_pqc = None
-                mlkem_ct = None
-                if negotiated_mode in (SecurityMode.HYBRID_X25519_MLKEM768, SecurityMode.PQC_MLKEM768):
-                    if not server_hello.server_mlkem_pk:
-                        raise ValueError("Missing server ML-KEM public key")
-                    kem = MLKEM768KeyExchange()
-                    ss_pqc, mlkem_ct = kem.encapsulate(server_hello.server_mlkem_pk)
-
-                # 5. Derive keys & send ClientKex
-                salt = client_nonce + server_hello.server_nonce
-                # Update transcript with ClientKex (without MAC) before computing MAC
-                kex_template = ClientKex(
-                    session_id=session_id,
-                    mlkem_ciphertext=mlkem_ct,
-                    client_finished_mac=b""
-                )
-                kex_dict_for_transcript = kex_template.to_dict()
-                kex_dict_for_transcript.pop("client_finished_mac", None)
-                transcript.update(kex_dict_for_transcript)
-                transcript_hash = transcript.current_digest()
-
-                session_keys = HybridKeyDerivation.derive_keys(
-                    mode=negotiated_mode.value,
-                    session_id=session_id,
-                    salt=salt,
-                    transcript_hash=transcript_hash,
-                    ss_classical=ss_classical,
-                    ss_pqc=ss_pqc
-                )
-
-                client_fin_tag = HybridKeyDerivation.compute_finished_tag(
-                    session_keys.mac_key, "CLIENT", transcript_hash
-                )
-                client_kex = ClientKex(
-                    session_id=session_id,
-                    mlkem_ciphertext=mlkem_ct,
-                    client_finished_mac=client_fin_tag
-                )
-                await AsyncTransport.send_message(writer, client_kex.to_dict())
-
-                # 6. Receive ServerFinished
-                fin_dict = await AsyncTransport.receive_message(reader, timeout=5.0)
-                if fin_dict.get("type") == MessageType.ERROR.value:
-                    raise RuntimeError(f"Handshake rejected: {fin_dict.get('description')}")
-                if fin_dict.get("type") != MessageType.SERVER_FINISHED.value:
-                    raise ValueError("Expected SERVER_FINISHED")
-
-                server_fin = ServerFinished.from_dict(fin_dict)
-                is_fin_valid = HybridKeyDerivation.verify_finished_tag(
-                    session_keys.mac_key, "SERVER", transcript_hash, server_fin.server_finished_mac
-                )
-                if not is_fin_valid:
-                    raise RuntimeError("Server Finished MAC verification failed! Server handshake compromised.")
-
-                self._emit("HANDSHAKE_ESTABLISHED", {
-                    "mode": negotiated_mode.value,
-                    "attempt": attempt,
-                    "session_id": session_id.hex(),
-                })
-
-                # 7. Initialize AEAD Cipher
-                cipher = ChunkedAEADCipher(
-                    enc_key=session_keys.enc_key,
-                    iv_salt=session_keys.iv_salt,
-                    session_id=session_keys.session_id
-                )
 
                 # 8. Check for Resumption on retry
                 file_id = os.urandom(16)
@@ -307,3 +333,110 @@ class PolicyAwareClient:
                         pass
 
         raise RuntimeError(f"Transfer incomplete after {attempt} attempts")
+
+    async def download_file(self, file_name: str, dest_dir: str, job_id: Optional[str] = None) -> Dict:
+        """
+        Executes policy-governed file download with authenticated handshake and AEAD decryption.
+        """
+        os.makedirs(dest_dir, exist_ok=True)
+        job_id = job_id or f"dl-{os.urandom(8).hex()}"
+        attempt = 0
+        last_negotiated_mode = None
+
+        while attempt < self.max_retries:
+            attempt += 1
+            writer = None
+            try:
+                reader, writer = await asyncio.open_connection(self.server_host, self.server_port)
+                session_id, session_keys, negotiated_mode, cipher = await self._perform_handshake(
+                    reader, writer, job_id, attempt, last_negotiated_mode
+                )
+                last_negotiated_mode = negotiated_mode
+
+                # Send DownloadRequest
+                req = DownloadRequest(session_id=session_id, file_name=file_name)
+                await AsyncTransport.send_message(writer, req.to_dict())
+
+                # Receive DownloadResponse
+                resp_dict = await AsyncTransport.receive_message(reader, timeout=10.0)
+                if resp_dict.get("type") == MessageType.ERROR.value:
+                    raise RuntimeError(f"Server error: {resp_dict.get('description')} ({resp_dict.get('code')})")
+                if resp_dict.get("type") != MessageType.DOWNLOAD_RESPONSE.value:
+                    raise ValueError("Expected DOWNLOAD_RESPONSE")
+
+                resp = DownloadResponse.from_dict(resp_dict)
+
+                # Receive and decrypt chunks
+                received_chunks = 0
+                while received_chunks < resp.total_chunks:
+                    chunk_dict = await AsyncTransport.receive_message(reader, timeout=15.0)
+                    if chunk_dict.get("type") != MessageType.FILE_CHUNK.value:
+                        raise ValueError("Expected FILE_CHUNK")
+
+                    chunk = FileChunk.from_dict(chunk_dict)
+                    decrypted = cipher.decrypt_chunk(
+                        file_id=resp.file_id,
+                        chunk_index=chunk.chunk_index,
+                        total_chunks=resp.total_chunks,
+                        ciphertext=chunk.ciphertext,
+                        is_final=chunk.is_final
+                    )
+                    FileManager.write_partial_chunk(
+                        storage_dir=dest_dir,
+                        file_name=file_name,
+                        chunk_index=chunk.chunk_index,
+                        chunk_data=decrypted
+                    )
+                    received_chunks += 1
+                    if chunk.is_final:
+                        break
+
+                # Finalize file and verify SHA-256
+                final_path = FileManager.finalize_file(
+                    storage_dir=dest_dir,
+                    file_name=file_name,
+                    expected_sha256=resp.sha256_hash
+                )
+
+                # Send completion ACK
+                ack = {
+                    "type": MessageType.TRANSFER_ACK.value,
+                    "session_id": b64e(session_id),
+                    "file_id": b64e(resp.file_id),
+                    "status": "COMPLETED_VERIFIED"
+                }
+                await AsyncTransport.send_message(writer, ack)
+
+                self._emit("DOWNLOAD_SUCCESS", {
+                    "job_id": job_id,
+                    "file_name": file_name,
+                    "verified_sha256": resp.sha256_hash,
+                    "mode": negotiated_mode.value
+                })
+
+                return {
+                    "status": "SUCCESS",
+                    "file_path": final_path,
+                    "verified_sha256": resp.sha256_hash,
+                    "mode": negotiated_mode.value,
+                    "attempts": attempt
+                }
+
+            except PolicyDowngradeRejectedError as e:
+                logger.error(f"[SHIELD ACTIVE] Policy Engine rejected downgrade: {e}")
+                self._emit("POLICY_DOWNGRADE_BLOCKED", {"reason": str(e), "attempt": attempt})
+                raise
+            except (ConnectionClosedError, ProtocolTimeoutError, OSError) as e:
+                logger.warning(f"Download connection failure on attempt {attempt}: {e}")
+                if attempt >= self.max_retries:
+                    raise RuntimeError(f"Download failed after {self.max_retries} attempts: {e}") from e
+                await asyncio.sleep(self.retry_delay_sec)
+            finally:
+                if writer:
+                    writer.close()
+                    try:
+                        await writer.wait_closed()
+                    except Exception:
+                        pass
+
+        raise RuntimeError(f"Download incomplete after {attempt} attempts")

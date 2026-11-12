@@ -74,8 +74,21 @@ Open your browser and navigate to: **`http://localhost:8000`**
 ### 3. Run Automated Unit & Attack Tests
 ```bash
 python main.py --test
-# Or directly:
+# Or directly via pytest (all 28 tests passing):
 pytest tests/ -v
+```
+
+### 4. Command-Line File Transfer & Download
+```bash
+# Upload a file with Hybrid policy
+python main.py --client --file sample.pdf --policy STRICT_HYBRID
+
+# Upload using specific key-establishment mode (Classical, PQC, or Hybrid)
+python main.py --client --file sample.pdf --policy COMPAT_CLASSICAL --mode CLASSICAL_X25519
+python main.py --client --file sample.pdf --policy STRICT_PQC --mode PQC_MLKEM768
+
+# Securely download a file from the server
+python main.py --download sample.pdf --policy STRICT_HYBRID
 ```
 
 ### 4. Run Benchmarks & Generate Research Graphs

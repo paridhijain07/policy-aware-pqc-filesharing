@@ -21,6 +21,8 @@ class MessageType(str, Enum):
     TRANSFER_ACK = "TRANSFER_ACK"
     RESUME_REQUEST = "RESUME_REQUEST"
     RESUME_RESPONSE = "RESUME_RESPONSE"
+    DOWNLOAD_REQUEST = "DOWNLOAD_REQUEST"
+    DOWNLOAD_RESPONSE = "DOWNLOAD_RESPONSE"
     ERROR = "ERROR"
 
 
@@ -273,4 +275,60 @@ class ErrorMessage:
             description=d["description"],
             is_fatal=d.get("is_fatal", True),
         )
+
+
+@dataclass
+class DownloadRequest:
+    session_id: bytes
+    file_name: str
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "type": MessageType.DOWNLOAD_REQUEST.value,
+            "session_id": b64e(self.session_id),
+            "file_name": self.file_name,
+        }
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "DownloadRequest":
+        return cls(
+            session_id=b64d(d["session_id"]),
+            file_name=d["file_name"],
+        )
+
+
+@dataclass
+class DownloadResponse:
+    session_id: bytes
+    file_id: bytes
+    file_name: str
+    file_size: int
+    total_chunks: int
+    sha256_hash: str
+    status: str = "READY"
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "type": MessageType.DOWNLOAD_RESPONSE.value,
+            "session_id": b64e(self.session_id),
+            "file_id": b64e(self.file_id),
+            "file_name": self.file_name,
+            "file_size": self.file_size,
+            "total_chunks": self.total_chunks,
+            "sha256_hash": self.sha256_hash,
+            "status": self.status,
+        }
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "DownloadResponse":
+        return cls(
+            session_id=b64d(d["session_id"]),
+            file_id=b64d(d["file_id"]),
+            file_name=d["file_name"],
+            file_size=d["file_size"],
+            total_chunks=d["total_chunks"],
+            sha256_hash=d["sha256_hash"],
+            status=d.get("status", "READY"),
+        )
+
 

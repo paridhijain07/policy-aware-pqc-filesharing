@@ -6,7 +6,7 @@ Guarantees: If EITHER component remains unbroken, the derived session keys are s
 
 from dataclasses import dataclass
 from typing import Optional
-from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF, HKDFExpand
 from cryptography.hazmat.primitives import hashes, hmac
 
 
@@ -60,9 +60,22 @@ class HybridKeyDerivation:
                 raise ValueError("Hybrid mode requires both classical and post-quantum shared secrets")
             if len(ss_classical) != 32 or len(ss_pqc) != 32:
                 raise ValueError("Shared secrets must each be 32 bytes")
-            # Concatenation ordered: classical || pqc (RFC 9954 compliant)
-            ikm = ss_classical + ss_pqc
             label = cls.LABEL_HYBRID
+            # Two-step Dual-PRF (RFC 9954 §3.2 / NIST SP 800-56C):
+            # Step 1 — HKDF-Extract: salt=nonce-salt, IKM=ss_pqc → PRK
+            #   HKDF-Extract is HMAC-SHA256(salt, IKM)
+            h_ext = hmac.HMAC(salt, hashes.SHA256())
+            h_ext.update(ss_pqc)
+            prk = h_ext.finalize()
+            # Step 2 — Fold classical secret: HMAC-SHA256(PRK, ss_classical) → IKM2
+            #   This binds the classical component; output is unbroken if either secret is unbroken.
+            h_fold = hmac.HMAC(prk, hashes.SHA256())
+            h_fold.update(ss_classical)
+            ikm2 = h_fold.finalize()
+            # Step 3 — HKDF-Expand: PRK=ikm2, info=label:session_id:transcript_hash → 72 bytes
+            info = label + b":" + session_id + b":" + transcript_hash
+            hkdf_expand = HKDFExpand(algorithm=hashes.SHA256(), length=72, info=info)
+            derived = hkdf_expand.derive(ikm2)
         elif mode in ("PQC_ONLY", "PQC", "PQC_MLKEM768"):
             if not ss_pqc or len(ss_pqc) != 32:
                 raise ValueError("PQC mode requires valid 32-byte ML-KEM shared secret")
@@ -76,21 +89,22 @@ class HybridKeyDerivation:
         else:
             raise ValueError(f"Unsupported key establishment mode: {mode}")
 
-        # Info context binds the mode label, session_id, and transcript hash
-        # Context-binding ensures handshake cannot be cross-replayed into a different mode
-        info = label + b":" + session_id + b":" + transcript_hash
+        if mode not in ("HYBRID", "HYBRID_X25519_MLKEM768"):
+            # Info context binds the mode label, session_id, and transcript hash
+            # Context-binding ensures handshake cannot be cross-replayed into a different mode
+            info = label + b":" + session_id + b":" + transcript_hash
 
-        # Extract & Expand 72 bytes total:
-        # - 32 bytes: AES-256-GCM symmetric encryption key
-        # - 32 bytes: HMAC-SHA256 handshake verification / MAC key
-        # - 8 bytes:  Base IV/nonce salt
-        hkdf = HKDF(
-            algorithm=hashes.SHA256(),
-            length=72,
-            salt=salt,
-            info=info
-        )
-        derived = hkdf.derive(ikm)
+            # Extract & Expand 72 bytes total:
+            # - 32 bytes: AES-256-GCM symmetric encryption key
+            # - 32 bytes: HMAC-SHA256 handshake verification / MAC key
+            # - 8 bytes:  Base IV/nonce salt
+            hkdf = HKDF(
+                algorithm=hashes.SHA256(),
+                length=72,
+                salt=salt,
+                info=info
+            )
+            derived = hkdf.derive(ikm)
 
         enc_key = derived[0:32]
         mac_key = derived[32:64]

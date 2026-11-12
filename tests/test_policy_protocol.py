@@ -13,6 +13,8 @@ from protocol.messages import (
     ServerFinished,
     ProtocolSerializer,
     MessageType,
+    DownloadRequest,
+    DownloadResponse,
 )
 from protocol.transcript import HandshakeTranscript
 from crypto.hybrid_combiner import HybridKeyDerivation
@@ -122,4 +124,62 @@ def test_transcript_detects_negotiation_tampering():
 
     # Digest must mismatch
     assert t_client.current_digest() != t_server.current_digest()
+
+
+def test_policy_engine_strict_pqc():
+    """Verify STRICT_PQC accepts Hybrid and PQC, but strictly rejects Classical."""
+    engine = PolicyEngine(PolicyLevel.STRICT_PQC)
+
+    # Hybrid and PQC allowed
+    assert engine.evaluate_negotiation(SecurityMode.HYBRID_X25519_MLKEM768).allowed
+    assert engine.evaluate_negotiation(SecurityMode.PQC_MLKEM768).allowed
+
+    # Classical rejected
+    with pytest.raises(PolicyDowngradeRejectedError):
+        engine.evaluate_negotiation(SecurityMode.CLASSICAL_X25519)
+
+    assert engine.total_downgrades_rejected == 1
+
+
+def test_policy_engine_compat_classical():
+    """Verify COMPAT_CLASSICAL allows Classical operation when explicitly permitted."""
+    engine = PolicyEngine(PolicyLevel.COMPAT_CLASSICAL)
+    assert engine.evaluate_negotiation(SecurityMode.CLASSICAL_X25519).allowed
+    assert engine.evaluate_negotiation(SecurityMode.HYBRID_X25519_MLKEM768).allowed
+
+
+def test_download_serialization_roundtrip():
+    """Verify DownloadRequest and DownloadResponse serialization, packing, and parsing."""
+    session_id = os.urandom(16)
+    file_id = os.urandom(16)
+
+    # DownloadRequest
+    req = DownloadRequest(session_id=session_id, file_name="archive.tar.gz")
+    packed_req = ProtocolSerializer.pack(req.to_dict())
+    prefix_len = int.from_bytes(packed_req[:4], "big")
+    unpacked_req = DownloadRequest.from_dict(ProtocolSerializer.unpack_payload(packed_req[4:4 + prefix_len]))
+    assert unpacked_req.session_id == req.session_id
+    assert unpacked_req.file_name == req.file_name
+
+    # DownloadResponse
+    resp = DownloadResponse(
+        session_id=session_id,
+        file_id=file_id,
+        file_name="archive.tar.gz",
+        file_size=1048576,
+        total_chunks=16,
+        sha256_hash="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        status="READY"
+    )
+    packed_resp = ProtocolSerializer.pack(resp.to_dict())
+    prefix_len2 = int.from_bytes(packed_resp[:4], "big")
+    unpacked_resp = DownloadResponse.from_dict(ProtocolSerializer.unpack_payload(packed_resp[4:4 + prefix_len2]))
+    assert unpacked_resp.session_id == resp.session_id
+    assert unpacked_resp.file_id == resp.file_id
+    assert unpacked_resp.file_name == resp.file_name
+    assert unpacked_resp.file_size == resp.file_size
+    assert unpacked_resp.total_chunks == resp.total_chunks
+    assert unpacked_resp.sha256_hash == resp.sha256_hash
+    assert unpacked_resp.status == "READY"
+
 
